@@ -30,6 +30,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
               </div>
               <nav className="top-nav">
                 <NavLink href="/">Ranked accounts</NavLink>
+                <NavLink href="/onepager">One-pager</NavLink>
                 {role === 'approver' && <NavLink href="/review">Review queue</NavLink>}
               </nav>
               <div className="top-user">

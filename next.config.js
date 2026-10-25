@@ -1,6 +1,10 @@
 /** @type {import('next').NextConfig} */
 module.exports = {
   poweredByHeader: false,
+    experimental: {
+    outputFileTracingIncludes: { '/api/onepager/generate': ['./lib/onepager/templates/**/*'] },
+    serverComponentsExternalPackages: ['sharp', 'exceljs'],
+  },
   async headers() {
     return [
       {
