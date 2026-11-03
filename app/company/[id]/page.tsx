@@ -10,6 +10,10 @@ export default async function CompanyPage({ params }: { params: { id: string } }
   const { data: company } = await supabase.from('companies').select('*').eq('id', id).single()
   if (!company) notFound()
   const { data: atlas } = await supabase.from('atlas_accounts').select('*').eq('company_id', id).maybeSingle()
+  const { data: contacts } = await supabase
+    .from('company_contacts')
+    .select('contact_name,title,email,phone,contact_owner,seniority,possibly_moved,last_activity')
+    .eq('company_id', id)
   const { data: props } = await supabase
     .from('properties')
     .select('*')
@@ -62,7 +66,42 @@ export default async function CompanyPage({ params }: { params: { id: string } }
         </dl>
         {company.hold_reason && <p className="muted">Note: {company.hold_reason}</p>}
       </section>
-            {atlas && (
+            <section className="card">
+        <div className="row">
+          <strong>Contacts ({(contacts ?? []).filter((c: any) => !c.possibly_moved).length})</strong>
+          {company.sf_account_name && <span className="muted small">Salesforce account: {company.sf_account_name}</span>}
+          {company.best_contact && <span className="badge ok">Best: {company.best_contact}</span>}
+        </div>
+        {(contacts ?? []).length === 0 ? (
+          <p className="muted">
+            No named contacts on file yet{company.sf_match_status === 'no_match' ? ' (this company is not in Salesforce)' : ''}.
+          </p>
+        ) : (
+          <div className="table-wrap" style={{ marginTop: 10 }}>
+            <table>
+              <thead>
+                <tr><th>Name</th><th>Title</th><th>Email</th><th>Phone</th><th>Owner</th><th>Last activity</th></tr>
+              </thead>
+              <tbody>
+                {(contacts as any[])
+                  .slice()
+                  .sort((x, y) => Number(!!x.possibly_moved) - Number(!!y.possibly_moved) || String(x.contact_name).localeCompare(String(y.contact_name)))
+                  .map((c, i) => (
+                    <tr key={i} style={{ opacity: c.possibly_moved ? 0.55 : 1 }}>
+                      <td className="acct">{c.contact_name}{c.possibly_moved && <span className="badge warn" style={{ marginLeft: 6 }}>may have moved</span>}</td>
+                      <td>{c.title ?? '—'}</td>
+                      <td>{c.email ? <a href={`mailto:${c.email}`}>{c.email}</a> : '—'}</td>
+                      <td>{c.phone ?? '—'}</td>
+                      <td>{c.contact_owner ?? '—'}</td>
+                      <td>{c.last_activity ?? '—'}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      {atlas && (
         <section className="card">
           <div className="row">
             <strong>Ratings (Atlas)</strong>
