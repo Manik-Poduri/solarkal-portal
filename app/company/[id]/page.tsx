@@ -43,6 +43,25 @@ export default async function CompanyPage({ params }: { params: { id: string } }
         <div><dt>On your lists</dt><dd>{[company.in_salesforce && 'Salesforce', company.in_210_list && '210 list'].filter(Boolean).join(' + ') || 'Neither (added from property files)'}</dd></div>
       </dl>
       {company.check_note && <p className="muted">Note: {company.check_note}</p>}
+      <section className="card">
+        <div className="row">
+          <strong>Ranking</strong>
+          {company.tier && <span className="badge ok">{company.tier}</span>}
+          {String(company.hold_reason ?? '').startsWith('Source list only') ? (
+            <span className="badge warn">source list only</span>
+          ) : (
+            <span className="badge ok">validated</span>
+          )}
+        </div>
+        <dl className="grid">
+          <div><dt>Account score</dt><dd>{company.account_score == null ? '—' : Number(company.account_score).toFixed(2)}</dd></div>
+          <div><dt>Qualifying properties</dt><dd>{company.n_qualifying ?? '—'}</dd></div>
+          <div><dt>Approach verdict</dt><dd>{company.approach_verdict ?? '—'}</dd></div>
+          <div><dt>Who to pitch</dt><dd>{company.who_to_pitch ?? '—'}</dd></div>
+          <div><dt>Salesforce history</dt><dd>{company.sf_opportunity_history ?? '—'}</dd></div>
+        </dl>
+        {company.hold_reason && <p className="muted">Note: {company.hold_reason}</p>}
+      </section>
             {atlas && (
         <section className="card">
           <div className="row">
@@ -85,6 +104,12 @@ export default async function CompanyPage({ params }: { params: { id: string } }
 
             <dl className="grid">
               <div><dt>Roof (sq ft)</dt><dd>{fmt(p.roof_sqft)}</dd></div>
+              <div><dt>Property score</dt><dd>{p.property_score == null ? '—' : Number(p.property_score).toFixed(2)}</dd></div>
+              <div><dt>Roof size source</dt><dd>{p.sqft_source ?? '—'}</dd></div>
+              <div><dt>Ownership</dt><dd>{p.ownership_status ?? '—'}</dd></div>
+              <div><dt>Validation</dt><dd>{p.validation_verdict ?? '—'}</dd></div>
+              <div><dt>Property type</dt><dd>{p.building_type ?? '—'}</dd></div>
+              <div><dt>State grade</dt><dd>{p.state_grade ?? '—'}</dd></div>
               <div><dt>Roof basis</dt><dd>{p.roof_basis ?? '—'}</dd></div>
               <div><dt>Building (sq ft)</dt><dd>{fmt(p.building_sqft)}</dd></div>
               <div><dt>Buildings</dt><dd>{p.building_count ?? '—'}</dd></div>
@@ -99,7 +124,7 @@ export default async function CompanyPage({ params }: { params: { id: string } }
               <div><dt>Est. annual savings</dt><dd>{p.est_annual_savings_usd == null ? '—' : `$${fmt(p.est_annual_savings_usd)}`}</dd></div>
             </dl>
             <p className="muted" style={{ fontSize: 12 }}>
-              Solar figures are estimates, not quotes.{p.notes ? ` Notes: ${p.notes}` : ''}
+              {p.source_url && <><a href={p.source_url} target="_blank" rel="noreferrer">Source ↗</a> · </>}Solar figures are estimates, not quotes.{p.notes ? ` Notes: ${p.notes}` : ''}
             </p>
 
             {ev.length > 0 && (
