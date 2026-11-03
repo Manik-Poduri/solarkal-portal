@@ -29,7 +29,7 @@ export async function middleware(request: NextRequest) {
 
   const path = request.nextUrl.pathname
   const isPublic =
-    path.startsWith('/login') || path.startsWith('/auth') || path.startsWith('/api/ingest')
+    path.startsWith('/login') || path.startsWith('/auth') || path.startsWith('/api/ingest') || path === '/privacy'
 
   const domainOk = !!user?.email && user.email.toLowerCase().endsWith(DOMAIN)
 
