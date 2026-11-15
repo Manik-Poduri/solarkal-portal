@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { describeApiError } from '@/lib/apiError'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { REGION_NAMES } from '@/lib/onepager/model'
@@ -100,8 +101,9 @@ export async function POST(request: Request) {
       searched = false
       try {
         text = await ask(client, needAi, false)
-      } catch {
-        return NextResponse.json({ error: 'The region lookup failed. Try again, or pick regions by hand.' }, { status: 502 })
+      } catch (e) {
+        console.error('region lookup failed', e)
+        return NextResponse.json({ error: `The region lookup failed (${describeApiError(e)}). Try again, or pick regions by hand.` }, { status: 502 })
       }
     }
     const parsed = parseJson(text)

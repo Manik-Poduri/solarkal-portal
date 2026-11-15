@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { describeApiError } from '@/lib/apiError'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
@@ -78,8 +79,9 @@ export async function POST(request: Request) {
     searched = false
     try {
       text = await ask(client, items, false)
-    } catch {
-      return NextResponse.json({ error: 'The battery check failed. Try again, or set Yes/No by hand.' }, { status: 502 })
+    } catch (e) {
+      console.error('battery check failed', e)
+      return NextResponse.json({ error: `The battery check failed (${describeApiError(e)}). Try again, or set Yes/No by hand.` }, { status: 502 })
     }
   }
 
