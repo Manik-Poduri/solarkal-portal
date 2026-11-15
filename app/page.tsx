@@ -4,7 +4,7 @@ import RankedExplorer from '@/components/RankedExplorer'
 export default async function Home() {
   const { supabase } = await requireUser()
 
-  const [ranked, atlas, details, contacts] = await Promise.all([
+  const [ranked, atlas, details, contacts, sfs] = await Promise.all([
     supabase.from('ranked_companies').select('*').limit(5000),
     supabase.from('atlas_accounts').select('*').limit(5000),
     supabase
@@ -15,6 +15,7 @@ export default async function Home() {
       .from('company_contacts')
       .select('company_id,contact_name,title,email,phone,contact_owner,seniority,possibly_moved')
       .limit(5000),
+    supabase.from('sf_accounts').select('account,owner,status,opportunities,company_id').limit(5000),
   ])
 
   const atlasBy = new Map((atlas.data ?? []).map((a: any) => [a.company_id, a]))
@@ -26,12 +27,20 @@ export default async function Home() {
     contactsBy.get(k)!.push(c)
   }
 
+  const sfList = (sfs.data ?? []) as any[]
+  const sfBy = new Map(sfList.filter((x) => x.company_id != null).map((x) => [x.company_id, x]))
+  const unresearched = sfList
+    .filter((x) => x.status === 'Never approached' && x.company_id == null)
+    .map((x) => ({ account: x.account, owner: x.owner }))
+    .sort((a, b) => String(a.account).localeCompare(String(b.account)))
+
   const rows = (ranked.data ?? []).map((r: any) => ({
     ...r,
+    sf_status: (sfBy.get(r.company_id) as any)?.status ?? null,
     ...(detailBy.get(r.company_id) ?? {}),
     atlas: atlasBy.get(r.company_id) ?? null,
     contacts: contactsBy.get(String(r.company_id)) ?? [],
   }))
 
-  return <RankedExplorer rows={rows} />
+  return <RankedExplorer rows={rows} unresearched={unresearched} />
 }
