@@ -7,64 +7,56 @@ import { useEffect, useMemo, useState } from 'react'
 type Row = any
 
 const nf = (n: any) => (n == null || n === '' ? '—' : Number(n).toLocaleString('en-US'))
-const pct = (n: any) => (n == null ? '—' : `${Math.round(Number(n) * 100)}%`)
 const STATES = ['NJ', 'NY', 'IL', 'MD', 'MA']
 
-const largestOf = (r: Row): number | null =>
-  Math.max(Number(r.largest_roof_sqft ?? 0), Number(r.atlas?.biggest_building_sqft ?? 0)) || null
-
-const confLabel = (c: number | null) => (c == null ? 'No rating' : c >= 0.75 ? 'High' : c >= 0.5 ? 'Medium' : 'Low')
-const confTone = (c: number | null) => (c == null ? '' : c >= 0.75 ? 'ok' : c >= 0.5 ? 'warn' : 'bad')
+// Companies loaded from the unchecked source list carry this hold reason.
+// Everything in the portal was validated by hand, including the source-list uploads.
+const sourceOnly = (_r: Row) => false
+const tierNum = (r: Row) => (r.tier === 'Tier 1' ? '1' : r.tier === 'Tier 2' ? '2' : r.tier === 'Tier 3' ? '3' : '—')
+const tierClass = (r: Row) => (r.tier === 'Tier 1' ? 'A' : r.tier === 'Tier 2' ? 'B' : 'C')
 
 const TABS = [
   { id: 'all', label: 'All accounts', test: (_r: Row) => true },
-  { id: 'A', label: 'Bucket A', test: (r: Row) => r.atlas?.bucket === 'A' },
-  { id: 'B', label: 'Bucket B', test: (r: Row) => r.atlas?.bucket === 'B' },
-  { id: 'C', label: 'Bucket C', test: (r: Row) => r.atlas?.bucket === 'C' },
-  { id: 'props', label: 'With loaded properties', test: (r: Row) => r.property_count > 0 },
-  { id: 'flagged', label: 'Flagged', test: (r: Row) => !!r.atlas?.audit_flags || r.confirm_largest_roof },
+  { id: 't1', label: 'Tier 1', test: (r: Row) => r.tier === 'Tier 1' },
+  { id: 't2', label: 'Tier 2', test: (r: Row) => r.tier === 'Tier 2' },
+  { id: 't3', label: 'Tier 3', test: (r: Row) => r.tier === 'Tier 3' },
+  { id: 'valid', label: 'Validated only', test: (r: Row) => !sourceOnly(r) },
+  { id: 'flagged', label: 'Flagged', test: (r: Row) => !!r.confirm_largest_roof || (!!r.hold_reason && !sourceOnly(r)) },
 ]
 
 const PAGE = 10
 
+const liveContacts = (r: Row) => (r.contacts ?? []).filter((c: any) => !c.possibly_moved)
+
+const csvCell = (v: any) => {
+  const t = v == null ? '' : String(v)
+  return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t
+}
+function downloadCsv(name: string, header: string[], data: any[][]) {
+  const text = '\uFEFF' + [header, ...data].map((row) => row.map(csvCell).join(',')).join('\r\n')
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 const SORTS: Record<string, { label: string; val: (r: Row) => number | string }> = {
-  addressable: { label: 'Addressable sq ft', val: (r) => Number(r.atlas?.total_addressable_sqft ?? -1) },
-  largest: { label: 'Largest roof', val: (r) => largestOf(r) ?? -1 },
-  confidence: { label: 'Confidence', val: (r) => Number(r.atlas?.overall_confidence ?? -1) },
-  qualifying: { label: 'Qualifying properties', val: (r) => Number(r.atlas?.n_properties_qualifying ?? -1) },
+  score: { label: 'Account score', val: (r) => Number(r.account_score ?? -1) },
+  largest: { label: 'Largest roof', val: (r) => Number(r.largest_roof_sqft ?? -1) },
+  total: { label: 'Total roof sq ft', val: (r) => Number(r.total_roof_sqft ?? -1) },
+  qualifying: { label: 'Qualifying properties', val: (r) => Number(r.n_qualifying ?? r.property_count ?? -1) },
   name: { label: 'Name (A–Z)', val: (r) => String(r.name).toLowerCase() },
 }
 
-function Meter({ value, tone }: { value: number | null; tone?: string }) {
-  const w = value == null ? 0 : Math.max(0, Math.min(1, value)) * 100
-  return (
-    <div className="meter">
-      <div className={`meter-fill ${tone ?? ''}`} style={{ width: `${w}%` }} />
-    </div>
-  )
-}
-
-function Bucket({ b }: { b?: string | null }) {
-  return <span className={`bucket ${b ?? ''}`}>{b ?? '—'}</span>
+function Tier({ r }: { r: Row }) {
+  return <span className={`bucket ${tierClass(r)}`} title={r.tier ?? 'No tier'}>{tierNum(r)}</span>
 }
 
 function Drawer({ r, onClose }: { r: Row; onClose: () => void }) {
-  const a = r.atlas
-  const conf = a?.overall_confidence == null ? null : Number(a.overall_confidence)
-  const geo = a && a.n_properties_total ? Number(a.n_properties_geocoded) / Number(a.n_properties_total) : null
-  const lookups = Number(a?.n_solar_lookups ?? 0)
-  const checked = a ? Number(a.n_solar_live_match) + Number(a.n_solar_live_no_match) + Number(a.n_solar_regional) : 0
-  const solarParts = a
-    ? [
-        { k: 'Live match', v: Number(a.n_solar_live_match), c: 'c1' },
-        { k: 'Live, no match', v: Number(a.n_solar_live_no_match), c: 'c2' },
-        { k: 'Regional data only', v: Number(a.n_solar_regional), c: 'c3' },
-        { k: 'No public source', v: Number(a.n_solar_no_public_source), c: 'c4' },
-      ]
-    : []
-  const qs: Record<string, number> = a?.qualifying_sqft ?? {}
-  const qMax = Math.max(1, ...Object.values(qs).map(Number))
-
   return (
     <>
       <div className="scrim" onClick={onClose} />
@@ -73,85 +65,61 @@ function Drawer({ r, onClose }: { r: Row; onClose: () => void }) {
           <div>
             <h2>{r.name}</h2>
             <div className="row">
-              <Bucket b={a?.bucket} />
-              {a && <span className="muted">Rank {a.rank_in_bucket} in bucket {a.bucket}</span>}
+              <Tier r={r} />
+              <span className="muted">{r.tier ?? 'No tier'}</span>
+              {sourceOnly(r) ? <span className="badge warn">source list only</span> : <span className="badge ok">validated</span>}
               {r.confirm_largest_roof && <span className="badge warn">confirm largest roof</span>}
             </div>
           </div>
           <button className="secondary" onClick={onClose}>Close ✕</button>
         </div>
 
-        <p><Link href={`/company/${r.company_id}`}>Open full page with property list →</Link>{r.property_count > 0 && <> &nbsp; <Link className="btn" href={`/onepager?company=${r.company_id}&auto=1`}>Build one-pager →</Link></>}</p>
+        <p><Link href={`/company/${r.company_id}`}>Open full page with property list →</Link>{r.property_count > 0 && <> &nbsp; <Link className="btn" style={{ whiteSpace: 'nowrap', padding: '6px 12px', fontSize: 13 }} href={`/onepager?company=${r.company_id}&auto=1`}>Build one-pager →</Link></>}</p>
 
-        {!a && <p className="muted">No Atlas rating for this account yet. Salesforce details and loaded properties are below.</p>}
-
-        {a && (
-          <>
-            <h3>Ratings</h3>
-            <div className="rating-main">
-              <div>
-                <div className="big">{conf == null ? '—' : conf.toFixed(2)}</div>
-                <span className={`badge ${confTone(conf)}`}>{confLabel(conf)} confidence</span>
-              </div>
-              <div style={{ flex: 1 }}><Meter value={conf} tone={confTone(conf)} /></div>
-            </div>
-            <div className="mini-meters">
-              <div><span>Properties that qualify</span><b>{pct(a.qualifying_rate)}</b><Meter value={Number(a.qualifying_rate)} /></div>
-              <div><span>Properties geocoded</span><b>{pct(geo)}</b><Meter value={geo} /></div>
-              <div><span>Solar lookups with a data source</span><b>{lookups ? pct(checked / lookups) : '—'}</b><Meter value={lookups ? checked / lookups : null} /></div>
-            </div>
-            <p className="muted small">
-              Solar signal strength: <b>{a.solar_signal_strength ?? '—'}</b>. &quot;No public source&quot; means solar status could not be checked for that property.
-            </p>
-
-            {a.audit_flags && <div className="callout">⚠ Audit flags: {a.audit_flags}</div>}
-
-            <h3>Details</h3>
-            <dl className="grid">
-              <div><dt>Addressable sq ft</dt><dd>{nf(a.total_addressable_sqft)}</dd></div>
-              <div><dt>Biggest building</dt><dd>{nf(a.biggest_building_sqft)} sq ft</dd></div>
-              <div><dt>Biggest building address</dt><dd>{a.biggest_building_address ?? '—'}</dd></div>
-              <div><dt>Properties (total / qualifying)</dt><dd>{nf(a.n_properties_total)} / {nf(a.n_properties_qualifying)}</dd></div>
-              <div><dt>Buildings (total / qualifying)</dt><dd>{nf(a.n_buildings_total)} / {nf(a.n_buildings_qualifying)}</dd></div>
-              <div><dt>Data sources</dt><dd>{a.ingest_paths ? String(a.ingest_paths).replace(/_/g, ' ').toLowerCase().split(',').join(', ') : '—'}</dd></div>
-            </dl>
-
-            <h3>Qualifying roof sq ft by state</h3>
-            <div className="bars">
-              {[...STATES, 'other'].map((s) => (
-                <div key={s} className="bar-row">
-                  <span>{s === 'other' ? 'Other' : s}</span>
-                  <div className="meter"><div className="meter-fill" style={{ width: `${(Number(qs[s] ?? 0) / qMax) * 100}%` }} /></div>
-                  <b>{nf(qs[s] ?? 0)}</b>
-                </div>
-              ))}
-            </div>
-
-            <h3>Solar lookups ({nf(lookups)})</h3>
-            <div className="stack">
-              {solarParts.map((p) => (
-                <div key={p.k} className={p.c} style={{ width: `${lookups ? (p.v / lookups) * 100 : 0}%` }} title={`${p.k}: ${p.v}`} />
-              ))}
-            </div>
-            <div className="legend">
-              {solarParts.map((p) => (
-                <span key={p.k}><i className={p.c} /> {p.k} {nf(p.v)}</span>
-              ))}
-            </div>
-          </>
-        )}
+        <h3>Ranking</h3>
+        <dl className="grid">
+          <div><dt>Account score</dt><dd>{r.account_score == null ? '—' : Number(r.account_score).toFixed(2)}</dd></div>
+          <div><dt>Qualifying properties</dt><dd>{nf(r.n_qualifying ?? r.property_count)}</dd></div>
+          <div><dt>Approach verdict</dt><dd>{r.approach_verdict ?? '—'}</dd></div>
+          <div><dt>Who to pitch</dt><dd>{r.who_to_pitch ?? '—'}</dd></div>
+        </dl>
+        {r.hold_reason && <div className="callout">⚠ {r.hold_reason}</div>}
 
         <h3>Loaded properties</h3>
         <dl className="grid">
-          <div><dt>Properties loaded</dt><dd>{r.property_count}</dd></div>
+          <div><dt>Properties on file</dt><dd>{r.property_count}</dd></div>
           <div><dt>Largest loaded roof</dt><dd>{nf(r.largest_roof_sqft)} sq ft</dd></div>
           <div><dt>Total loaded roof</dt><dd>{nf(r.total_roof_sqft)} sq ft</dd></div>
+          <div><dt>All roofs verified</dt><dd>{r.all_verified ? 'Yes' : 'No'}</dd></div>
         </dl>
+
+        <h3>Contacts ({nf(r.n_contacts ?? 0)})</h3>
+        {r.best_contact && <p className="small"><strong>Best contact to pitch:</strong> {r.best_contact}</p>}
+        {(r.contacts ?? []).length === 0 ? (
+          <p className="muted small">No named contacts on file yet{r.sf_match_status === 'no_match' ? ' (company is not in Salesforce)' : ''}.</p>
+        ) : (
+          <ul className="small" style={{ paddingLeft: 18, margin: '6px 0' }}>
+            {(r.contacts as any[])
+              .slice()
+              .sort((a, b) => Number(!!a.possibly_moved) - Number(!!b.possibly_moved) || String(a.contact_name).localeCompare(String(b.contact_name)))
+              .map((c, i) => (
+                <li key={i} style={{ marginBottom: 4, opacity: c.possibly_moved ? 0.55 : 1 }}>
+                  <strong>{c.contact_name}</strong>{c.title ? `, ${c.title}` : ''}
+                  {c.possibly_moved && <span className="badge warn" style={{ marginLeft: 6 }}>may have moved</span>}
+                  <br />
+                  <span className="muted">{[c.email, c.phone].filter(Boolean).join(' · ')}</span>
+                </li>
+              ))}
+          </ul>
+        )}
 
         <h3>Company (Salesforce)</h3>
         <dl className="grid">
-          <div><dt>HQ / billing state</dt><dd>{r.billing_state ?? '—'}</dd></div>
+          <div><dt>Main state</dt><dd>{r.billing_state ?? '—'}</dd></div>
           <div><dt>Salesforce owner</dt><dd>{r.sf_owner ?? '—'}</dd></div>
+          <div><dt>Salesforce account</dt><dd>{r.sf_account_name ?? (r.sf_match_status === 'no_match' ? 'Not in Salesforce' : '—')}</dd></div>
+          <div><dt>Open opportunities</dt><dd>{r.sf_open_opps ?? '—'}</dd></div>
+          <div><dt>Last opportunity stage</dt><dd>{r.sf_last_stage ?? '—'}</dd></div>
           <div><dt>Account type</dt><dd>{[r.sf_record_type, r.sf_type].filter(Boolean).join(' · ') || '—'}</dd></div>
           <div><dt>Parent account</dt><dd>{r.sf_parent_account ?? '—'}</dd></div>
           <div><dt>Created</dt><dd>{r.sf_created ?? '—'}</dd></div>
@@ -168,10 +136,11 @@ function Drawer({ r, onClose }: { r: Row; onClose: () => void }) {
 export default function RankedExplorer({ rows }: { rows: Row[] }) {
   const [tab, setTab] = useState('all')
   const [q, setQ] = useState('')
-  const [sort, setSort] = useState('addressable')
+  const [sort, setSort] = useState('score')
   const [state, setState] = useState('')
-  const [signal, setSignal] = useState('')
-  const [minConf, setMinConf] = useState(0)
+  const [valid, setValid] = useState('')
+  const [contact, setContact] = useState('')
+  const [owner, setOwner] = useState('')
   const [sel, setSel] = useState<Row | null>(null)
   const [page, setPage] = useState(1)
 
@@ -180,6 +149,11 @@ export default function RankedExplorer({ rows }: { rows: Row[] }) {
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [])
+
+  const owners = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.sf_owner).filter(Boolean))).sort((a: any, b: any) => String(a).localeCompare(String(b))) as string[],
+    [rows]
+  )
 
   const counts = useMemo(() => Object.fromEntries(TABS.map((t) => [t.id, rows.filter(t.test).length])), [rows])
 
@@ -190,9 +164,10 @@ export default function RankedExplorer({ rows }: { rows: Row[] }) {
       (r) =>
         t.test(r) &&
         (!needle || r.name.toLowerCase().includes(needle)) &&
-        (!state || Number(r.atlas?.qualifying_sqft?.[state] ?? 0) > 0) &&
-        (!signal || r.atlas?.solar_signal_strength === signal) &&
-        (!minConf || Number(r.atlas?.overall_confidence ?? 0) >= minConf)
+        (!state || r.billing_state === state) &&
+        (!valid || (valid === 'validated' ? !sourceOnly(r) : sourceOnly(r))) &&
+        (!contact || (contact === 'has' ? Number(r.n_contacts ?? 0) > 0 : Number(r.n_contacts ?? 0) === 0)) &&
+        (!owner || (owner === '__none' ? !r.sf_owner : r.sf_owner === owner))
     )
     const f = SORTS[sort].val
     out.sort((a, b) => {
@@ -201,9 +176,9 @@ export default function RankedExplorer({ rows }: { rows: Row[] }) {
       return y - x || String(a.name).localeCompare(String(b.name))
     })
     return out
-  }, [rows, tab, q, sort, state, signal, minConf])
+  }, [rows, tab, q, sort, state, valid, contact, owner])
 
-  useEffect(() => { setPage(1) }, [tab, q, sort, state, signal, minConf])
+  useEffect(() => { setPage(1) }, [tab, q, sort, state, valid, contact, owner])
 
   const pages = Math.max(1, Math.ceil(list.length / PAGE))
   const cur = Math.min(page, pages)
@@ -211,22 +186,38 @@ export default function RankedExplorer({ rows }: { rows: Row[] }) {
   const slice = list.slice(start, start + PAGE)
   const pageNums = Array.from({ length: pages }, (_, i) => i + 1).filter((n) => n === 1 || n === pages || Math.abs(n - cur) <= 2)
 
-  const totalAddr = list.reduce((s, r) => s + Number(r.atlas?.total_addressable_sqft ?? 0), 0)
-  const rated = list.filter((r) => r.atlas?.overall_confidence != null)
-  const avgConf = rated.length ? rated.reduce((s, r) => s + Number(r.atlas.overall_confidence), 0) / rated.length : null
+  const exportAccounts = () =>
+    downloadCsv(
+      `solarkal-ranked-accounts-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['Rank', 'Tier', 'Account score', 'Company', 'Main state', 'Qualifying properties', 'Largest roof sq ft', 'Total roof sq ft', 'Data', 'Salesforce owner', 'Named contacts', 'Best contact to pitch', 'Approach verdict', 'Who to pitch'],
+      list.map((r) => [r.rank, r.tier, r.account_score == null ? '' : Number(r.account_score).toFixed(2), r.name, r.billing_state, r.n_qualifying ?? r.property_count, r.largest_roof_sqft, r.total_roof_sqft, sourceOnly(r) ? 'Source list only' : 'Validated', r.sf_owner, r.n_contacts ?? 0, r.best_contact, r.approach_verdict, r.who_to_pitch])
+    )
+
+  const exportContacts = () =>
+    downloadCsv(
+      `solarkal-contacts-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['Company', 'Tier', 'Rank', 'Account score', 'Salesforce owner', 'Contact name', 'Title', 'Email', 'Phone', 'Contact owner', 'May have moved'],
+      list.flatMap((r) =>
+        (r.contacts ?? []).map((c: any) => [r.name, r.tier, r.rank, r.account_score == null ? '' : Number(r.account_score).toFixed(2), r.sf_owner, c.contact_name, c.title, c.email, c.phone, c.contact_owner, c.possibly_moved ? 'Yes' : ''])
+      )
+    )
+
+  const totalRoof = list.reduce((s, r) => s + Number(r.total_roof_sqft ?? 0), 0)
+  const nValid = list.filter((r) => !sourceOnly(r)).length
+  const nTier1 = list.filter((r) => r.tier === 'Tier 1').length
 
   return (
     <main>
       <h1>Account Ratings</h1>
       <p className="muted">
-        Companies ranked by addressable roof sq ft. Click any company to see its ratings and company details.
+        Companies ranked by account score: the sum of each account&apos;s five best property scores (roof size × state grade × data confidence), plus a small bonus for extra properties. Click any company for details.
       </p>
 
       <div className="cards">
         <div className="stat"><div className="stat-label">Accounts in view</div><div className="stat-value">{nf(list.length)}</div></div>
-        <div className="stat"><div className="stat-label">Addressable sq ft</div><div className="stat-value">{nf(totalAddr)}</div></div>
-        <div className="stat"><div className="stat-label">Average confidence</div><div className="stat-value">{avgConf == null ? '—' : avgConf.toFixed(2)}</div></div>
-        <div className="stat"><div className="stat-label">Bucket A in view</div><div className="stat-value">{nf(list.filter((r) => r.atlas?.bucket === 'A').length)}</div></div>
+        <div className="stat"><div className="stat-label">Qualifying roof sq ft</div><div className="stat-value">{nf(totalRoof)}</div></div>
+        <div className="stat"><div className="stat-label">Validated accounts</div><div className="stat-value">{nf(nValid)}</div></div>
+        <div className="stat"><div className="stat-label">Tier 1 in view</div><div className="stat-value">{nf(nTier1)}</div></div>
       </div>
 
       <div className="tabs" role="tablist">
@@ -244,53 +235,70 @@ export default function RankedExplorer({ rows }: { rows: Row[] }) {
             {Object.entries(SORTS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
         </label>
-        <label>State (qualifying roofs)
+        <label>Main state
           <select value={state} onChange={(e) => setState(e.target.value)}>
             <option value="">All</option>
             {STATES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </label>
-        <label>Solar signal
-          <select value={signal} onChange={(e) => setSignal(e.target.value)}>
-            <option value="">Any</option>
-            {['property_level', 'mixed', 'regional', 'unavailable'].map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+        <label>Data
+          <select value={valid} onChange={(e) => setValid(e.target.value)}>
+            <option value="">All</option>
+            <option value="validated">Validated</option>
+            <option value="source">Source list only</option>
           </select>
         </label>
-        <label>Min confidence {minConf ? minConf.toFixed(2) : 'any'}
-          <input type="range" min={0} max={0.9} step={0.05} value={minConf} onChange={(e) => setMinConf(Number(e.target.value))} />
+        <label>Contacts
+          <select value={contact} onChange={(e) => setContact(e.target.value)}>
+            <option value="">All</option>
+            <option value="has">Has named contact</option>
+            <option value="none">No named contact</option>
+          </select>
         </label>
-        {(q || state || signal || minConf > 0) && (
-          <button className="secondary" onClick={() => { setQ(''); setState(''); setSignal(''); setMinConf(0) }}>Clear filters</button>
+        <label>Salesforce owner
+          <select value={owner} onChange={(e) => setOwner(e.target.value)}>
+            <option value="">All</option>
+            {owners.map((o) => <option key={o} value={o}>{o}</option>)}
+            <option value="__none">Not in Salesforce</option>
+          </select>
+        </label>
+        {(q || state || valid || contact || owner) && (
+          <button className="secondary" onClick={() => { setQ(''); setState(''); setValid(''); setContact(''); setOwner('') }}>Clear filters</button>
         )}
+        <button className="secondary" onClick={exportAccounts} disabled={list.length === 0}>Download accounts CSV ({nf(list.length)})</button>
+        <button className="secondary" onClick={exportContacts} disabled={list.length === 0}>Download contacts CSV</button>
       </div>
 
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Bucket</th>
+              <th>Tier</th>
               <th className="num">Ranking</th>
-              <th className="num">Addressable sq ft</th>
+              <th className="num">Score</th>
               <th>Name of the company</th>
               <th className="num">No. of properties</th>
+              <th className="num">Largest roof sq ft</th>
+              <th className="num">Contacts</th>
+              <th>Owner</th>
+              <th>Data</th>
               <th></th>
             </tr>
           </thead>
-          <tbody key={cur}>
+          <tbody>
             {slice.map((r, i) => (
-              <tr key={r.company_id} style={{ ['--i' as any]: i }} className={`click ${sel?.company_id === r.company_id ? 'sel' : ''}`} onClick={() => setSel(r)}>
-                <td><Bucket b={r.atlas?.bucket} /></td>
+              <tr key={r.company_id} className={`click ${sel?.company_id === r.company_id ? 'sel' : ''}`} onClick={() => setSel(r)}>
+                <td><Tier r={r} /></td>
                 <td className="num"><span className="rank">{start + i + 1}</span></td>
-                <td className="num">{nf(r.atlas?.total_addressable_sqft)}</td>
+                <td className="num">{r.account_score == null ? '—' : Number(r.account_score).toFixed(2)}</td>
                 <td className="acct">{r.name}</td>
-                                <td className="num">
-                  <b className="pcount">{nf(r.property_count)}</b>
-                  {r.atlas?.n_properties_total != null && (
-                    <div className="psub">{nf(r.atlas.n_properties_total)} screened · {nf(r.atlas.n_properties_qualifying)} qualify</div>
-                  )}
-                </td>
+                <td className="num">{nf(r.n_qualifying ?? r.property_count)}</td>
+                <td className="num">{nf(r.largest_roof_sqft)}</td>
+                <td className="num">{nf(r.n_contacts ?? 0)}</td>
+                <td>{r.sf_owner ?? '—'}</td>
+                <td><span className="badge ok">validated</span></td>
                 <td onClick={(e) => e.stopPropagation()}>
-                  {r.property_count > 0 && <Link className="btn" href={`/onepager?company=${r.company_id}&auto=1`}>Build one-pager</Link>}
+                  {r.property_count > 0 && <Link className="btn" style={{ whiteSpace: 'nowrap', padding: '6px 12px', fontSize: 13 }} href={`/onepager?company=${r.company_id}&auto=1`}>Build one-pager</Link>}
                 </td>
               </tr>
             ))}
