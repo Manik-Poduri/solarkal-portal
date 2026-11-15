@@ -302,7 +302,7 @@ export default function RankedExplorer({ rows, unresearched = [] }: { rows: Row[
                 <td className="acct">{r.name}</td>
                 <td className="num">{nf(r.n_qualifying ?? r.property_count)}</td>
                 <td className="num">{nf(r.largest_roof_sqft)}</td>
-                <td className="num">{nf(r.n_contacts ?? 0)}</td>
+                <td className="num">{r.n_contacts == null && (r.contacts ?? []).length === 0 ? <span className="muted small">not loaded</span> : nf(r.n_contacts ?? (r.contacts ?? []).length)}</td>
                 <td>{r.sf_owner ?? '—'}</td>
                 <td><span className="badge ok">validated</span></td>
                 <td onClick={(e) => e.stopPropagation()}>
