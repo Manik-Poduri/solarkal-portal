@@ -32,6 +32,9 @@ export default async function CompanyPage({ params }: { params: { id: string } }
     <main>
       <p><Link href="/">← Ranked list</Link></p>
       <h1>{company.name}</h1>
+      {(props?.length ?? 0) > 0 && (
+        <p><Link href={`/onepager?company=${id}`} className="btn">Build one-pager →</Link></p>
+      )}
       <p className="muted">
         {props?.length ?? 0} approved {props?.length === 1 ? 'property' : 'properties'} · largest roof{' '}
         {fmt(largest)} sq ft · total {fmt(total)} sq ft · status {company.status}

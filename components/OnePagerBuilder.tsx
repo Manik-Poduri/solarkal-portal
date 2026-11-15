@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 type Row = {
   id: number
@@ -80,7 +80,7 @@ function b64Blob(b64: string, type: string) {
   return URL.createObjectURL(new Blob([bytes], { type }))
 }
 
-export default function OnePagerBuilder({ companies, regions }: { companies: { id: number; name: string; n: number }[]; regions: string[] }) {
+export default function OnePagerBuilder({ companies, regions, initialId, initialProps }: { companies: { id: number; name: string; n: number }[]; regions: string[]; initialId?: number; initialProps?: string }) {
   const [name, setName] = useState('')
   const [brand, setBrand] = useState('')
   const [cap, setCap] = useState('6.0')
@@ -97,6 +97,20 @@ export default function OnePagerBuilder({ companies, regions }: { companies: { i
   const [progress, setProgress] = useState('')
   const [result, setResult] = useState<Result | null>(null)
   const nextId = useRef(1)
+  const autoLoaded = useRef(false)
+
+  // Opened from a company page: load that company's properties straight away.
+  useEffect(() => {
+    if (autoLoaded.current) return
+    if (initialProps) {
+      autoLoaded.current = true
+      loadPortal('', initialProps)
+    } else if (initialId) {
+      autoLoaded.current = true
+      loadPortal(String(initialId))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialId, initialProps])
 
   const missing = useMemo(() => rows.filter((r) => !r.region).length, [rows])
   const totalGla = useMemo(() => rows.reduce((s, r) => s + (Number(r.gla) || 0), 0), [rows])
@@ -114,10 +128,10 @@ export default function OnePagerBuilder({ companies, regions }: { companies: { i
     )
   }
 
-  async function loadPortal(id: string) {
-    if (!id) return
+  async function loadPortal(id: string, ids?: string) {
+    if (!id && !ids) return
     setMsg('Loading properties from the portal…')
-    const res = await fetch(`/api/onepager/portal-company?id=${id}`)
+    const res = await fetch(ids ? `/api/onepager/portal-company?ids=${encodeURIComponent(ids)}` : `/api/onepager/portal-company?id=${id}`)
     const d = await res.json()
     if (!res.ok) return setMsg(d.error ?? 'Could not load that company.')
     const add: Row[] = (d.properties as any[]).map((p) => ({
@@ -133,7 +147,7 @@ export default function OnePagerBuilder({ companies, regions }: { companies: { i
     if (!name) setName(d.name)
     setRows((r) => [...r, ...add])
     setResult(null)
-    setMsg(`Loaded ${add.length} properties for ${d.name}. Building size is used as GLA.`)
+    setMsg(`Loaded ${add.length} ${add.length === 1 ? 'property' : 'properties'}${d.name ? ` for ${d.name}` : ' you selected'}. Building size is used as GLA.${d.name ? '' : ' Type the company name above.'}`)
   }
 
   function onLogo(file: File | undefined) {

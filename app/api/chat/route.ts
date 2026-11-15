@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { describeApiError } from '@/lib/apiError'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
@@ -127,7 +128,8 @@ export async function POST(request: Request) {
       msgs.push({ role: 'user', content: results })
     }
     return NextResponse.json({ reply: 'That question needed too many lookups. Try asking something narrower.' })
-  } catch {
-    return NextResponse.json({ reply: 'The chatbot hit an error. Please try again.' }, { status: 502 })
+  } catch (e) {
+    console.error('chat failed', e)
+    return NextResponse.json({ reply: `The chatbot hit an error (${describeApiError(e)}). Please try again.` }, { status: 502 })
   }
 }
