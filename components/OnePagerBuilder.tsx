@@ -80,7 +80,7 @@ function b64Blob(b64: string, type: string) {
   return URL.createObjectURL(new Blob([bytes], { type }))
 }
 
-export default function OnePagerBuilder({ companies, regions, initialId, initialProps }: { companies: { id: number; name: string; n: number }[]; regions: string[]; initialId?: number; initialProps?: string }) {
+export default function OnePagerBuilder({ companies, regions, initialId, initialProps, autoBuild }: { companies: { id: number; name: string; n: number }[]; regions: string[]; initialId?: number; initialProps?: string; autoBuild?: boolean }) {
   const [name, setName] = useState('')
   const [brand, setBrand] = useState('')
   const [cap, setCap] = useState('6.0')
@@ -98,6 +98,7 @@ export default function OnePagerBuilder({ companies, regions, initialId, initial
   const [result, setResult] = useState<Result | null>(null)
   const nextId = useRef(1)
   const autoLoaded = useRef(false)
+  const [auto, setAuto] = useState<'' | 'detect' | 'running' | 'build'>('')
 
   // Opened from a company page: load that company's properties straight away.
   useEffect(() => {
@@ -107,10 +108,22 @@ export default function OnePagerBuilder({ companies, regions, initialId, initial
       loadPortal('', initialProps)
     } else if (initialId) {
       autoLoaded.current = true
-      loadPortal(String(initialId))
+      loadPortal(String(initialId)).then((ok) => { if (ok && autoBuild) setAuto('detect') })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialId, initialProps])
+
+  // One-click mode: load → find regions + battery → build, without further clicks.
+  useEffect(() => {
+    if (auto === 'detect' && rows.length && !busy) {
+      setAuto('running')
+      detect(true).then((ok) => setAuto(ok ? 'build' : ''))
+    } else if (auto === 'build' && !busy) {
+      setAuto('')
+      build()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto, rows, busy])
 
   const missing = useMemo(() => rows.filter((r) => !r.region).length, [rows])
   const totalGla = useMemo(() => rows.reduce((s, r) => s + (Number(r.gla) || 0), 0), [rows])
@@ -129,11 +142,11 @@ export default function OnePagerBuilder({ companies, regions, initialId, initial
   }
 
   async function loadPortal(id: string, ids?: string) {
-    if (!id && !ids) return
+    if (!id && !ids) return false
     setMsg('Loading properties from the portal…')
     const res = await fetch(ids ? `/api/onepager/portal-company?ids=${encodeURIComponent(ids)}` : `/api/onepager/portal-company?id=${id}`)
     const d = await res.json()
-    if (!res.ok) return setMsg(d.error ?? 'Could not load that company.')
+    if (!res.ok) { setMsg(d.error ?? 'Could not load that company.'); return false }
     const add: Row[] = (d.properties as any[]).map((p) => ({
       id: nextId.current++,
       property: p.property,
@@ -148,6 +161,7 @@ export default function OnePagerBuilder({ companies, regions, initialId, initial
     setRows((r) => [...r, ...add])
     setResult(null)
     setMsg(`Loaded ${add.length} ${add.length === 1 ? 'property' : 'properties'}${d.name ? ` for ${d.name}` : ' you selected'}. Building size is used as GLA.${d.name ? '' : ' Type the company name above.'}`)
+    return true
   }
 
   function onLogo(file: File | undefined) {
@@ -166,7 +180,7 @@ export default function OnePagerBuilder({ companies, regions, initialId, initial
 
   async function detect(onlyMissing: boolean) {
     const todo = rows.filter((r) => !onlyMissing || !r.region)
-    if (!todo.length) return setMsg('Every property already has a region.')
+    if (!todo.length) { setMsg('Every property already has a region.'); return true }
     setBusy('detect')
     setResult(null)
     try {
@@ -217,8 +231,10 @@ export default function OnePagerBuilder({ companies, regions, initialId, initial
         })
       )
       setMsg('Regions and battery eligibility filled in. Check anything marked low or medium before you build.')
+      return true
     } catch (e: any) {
       setMsg(e.message)
+      return false
     } finally {
       setBusy('')
       setProgress('')
