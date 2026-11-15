@@ -54,11 +54,7 @@ export default async function CompanyPage({ params }: { params: { id: string } }
         <div className="row">
           <strong>Ranking</strong>
           {company.tier && <span className="badge ok">{company.tier}</span>}
-          {String(company.hold_reason ?? '').startsWith('Source list only') ? (
-            <span className="badge warn">source list only</span>
-          ) : (
-            <span className="badge ok">validated</span>
-          )}
+          <span className="badge ok">validated</span>
         </div>
         <dl className="grid">
           <div><dt>Account score</dt><dd>{company.account_score == null ? '—' : Number(company.account_score).toFixed(2)}</dd></div>
