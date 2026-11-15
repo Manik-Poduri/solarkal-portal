@@ -17,6 +17,7 @@ const tierClass = (r: Row) => (r.tier === 'Tier 1' ? 'A' : r.tier === 'Tier 2' ?
 
 const TABS = [
   { id: 'all', label: 'All accounts', test: (_r: Row) => true },
+  { id: 'never', label: 'Never approached', test: (r: Row) => r.sf_status === 'Never approached' },
   { id: 't1', label: 'Tier 1', test: (r: Row) => r.tier === 'Tier 1' },
   { id: 't2', label: 'Tier 2', test: (r: Row) => r.tier === 'Tier 2' },
   { id: 't3', label: 'Tier 3', test: (r: Row) => r.tier === 'Tier 3' },
@@ -116,6 +117,7 @@ function Drawer({ r, onClose }: { r: Row; onClose: () => void }) {
         <h3>Company (Salesforce)</h3>
         <dl className="grid">
           <div><dt>Main state</dt><dd>{r.billing_state ?? '—'}</dd></div>
+          <div><dt>Salesforce status</dt><dd>{r.sf_status ?? '—'}</dd></div>
           <div><dt>Salesforce owner</dt><dd>{r.sf_owner ?? '—'}</dd></div>
           <div><dt>Salesforce account</dt><dd>{r.sf_account_name ?? (r.sf_match_status === 'no_match' ? 'Not in Salesforce' : '—')}</dd></div>
           <div><dt>Open opportunities</dt><dd>{r.sf_open_opps ?? '—'}</dd></div>
@@ -133,7 +135,7 @@ function Drawer({ r, onClose }: { r: Row; onClose: () => void }) {
   )
 }
 
-export default function RankedExplorer({ rows }: { rows: Row[] }) {
+export default function RankedExplorer({ rows, unresearched = [] }: { rows: Row[]; unresearched?: { account: string; owner: string | null }[] }) {
   const [tab, setTab] = useState('all')
   const [q, setQ] = useState('')
   const [sort, setSort] = useState('score')
@@ -228,6 +230,12 @@ export default function RankedExplorer({ rows }: { rows: Row[] }) {
         ))}
       </div>
 
+      {tab === 'never' && (
+        <p className="muted">
+          {nf(list.length)} never-approached accounts researched and ranked below. {nf(unresearched.length)} more never-approached accounts are listed under the table as not yet researched.
+        </p>
+      )}
+
       <div className="filters">
         <input placeholder="Search companies" value={q} onChange={(e) => setQ(e.target.value)} />
         <label>Sort
@@ -306,6 +314,25 @@ export default function RankedExplorer({ rows }: { rows: Row[] }) {
         </table>
       </div>
       {list.length === 0 && <p className="muted">No accounts match these filters.</p>}
+
+      {tab === 'never' && unresearched.length > 0 && (() => {
+        const needle = q.trim().toLowerCase()
+        const rest = unresearched.filter((u) => (!needle || u.account.toLowerCase().includes(needle)) && (!owner || (owner === '__none' ? !u.owner : u.owner === owner)))
+        return (
+          <section style={{ marginTop: 32 }}>
+            <h2>Not yet researched ({nf(rest.length)})</h2>
+            <p className="muted small">Salesforce key accounts nobody has approached and we have no verified properties for yet. These are the next research queue.</p>
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Account (Salesforce)</th><th>Owner</th></tr></thead>
+                <tbody>
+                  {rest.map((u) => (<tr key={u.account}><td className="acct">{u.account}</td><td>{u.owner ?? '—'}</td></tr>))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )
+      })()}
 
       {list.length > 0 && (
         <div className="pager">
