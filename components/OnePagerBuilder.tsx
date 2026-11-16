@@ -64,7 +64,16 @@ function parsePasted(text: string, startId: number): { rows: Row[]; skipped: str
       let property = '', address = '', city = '', state = ''
       if (c.length >= 5) [property, address, city, state] = c
       else if (c.length === 4) [property, city, state] = c
-      else {
+      else if (c.length === 3) {
+        // "Property (with city after a comma), State, Size", e.g. "800 Coopertown Rd, Delanco<tab>NJ<tab>200868"
+        property = c[0]
+        state = c[1]
+        const k = property.lastIndexOf(',')
+        if (k > 0) {
+          city = property.slice(k + 1).trim()
+          property = property.slice(0, k).trim()
+        }
+      } else {
         skipped.push(line)
         return
       }
@@ -137,7 +146,7 @@ export default function OnePagerBuilder({ companies, regions, initialId, initial
     setMsg(
       add.length
         ? `Added ${add.length} ${add.length === 1 ? 'property' : 'properties'}.` + (skipped.length ? ` Skipped ${skipped.length} line(s) I could not read.` : '')
-        : 'No rows found. Paste lines like: Property, Address, City, State, GLA (sq ft).'
+        : 'No rows found. Paste lines like: Property, Address, City, State, GLA (sq ft) — or Property with city, State, GLA.'
     )
   }
 
